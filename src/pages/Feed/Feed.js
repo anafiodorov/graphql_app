@@ -61,6 +61,8 @@ class Feed extends Component {
         posts {
           id
           title
+          content
+          createdAt
           }
       }   
       `,
@@ -149,20 +151,33 @@ class Feed extends Component {
     formData.append('title', postData.title);
     formData.append('content', postData.content);
     formData.append('image', postData.image);
-
-    const graphqlQuery = {
-      query: `
+    let graphqlQuery;
+    if (this.state.editPost) {
+      graphqlQuery = {
+        query: `
+          mutation {
+            updatePost(id: "${this.state.editPost.id}", postInput :{title: "${postData.title}", imageUrl: "someurl", content: "${postData.content}"}){
+              id
+              title
+              content
+            }
+          }
+        `,
+      };
+    } else {
+      graphqlQuery = {
+        query: `
         mutation {
           createPost(postInput: {title: "${postData.title}", imageUrl: "someurl", content: "${postData.content}"}){
             id
             title
             content
-            imageUrl
-            createdAt
           }
         }
       `,
-    };
+      };
+    }
+
     fetch('http://localhost:8080/graphql', {
       method: 'POST',
       body: JSON.stringify(graphqlQuery),
@@ -195,7 +210,18 @@ class Feed extends Component {
           createdAt: resData.data.createPost.createdAt,
         };
         this.setState((prevState) => {
+          let updatedPosts = [...prevState.posts];
+          if (prevState.editPost) {
+            const postIndex = prevState.posts.findIndex(
+              (p) => p.id === prevState.editPost.id
+            );
+            updatedPosts[postIndex] = post;
+          } else {
+            updatedPosts.pop();
+            updatedPosts.unshift(post);
+          }
           return {
+            posts: updatedPosts,
             isEditing: false,
             editPost: null,
             editLoading: false,
@@ -219,19 +245,32 @@ class Feed extends Component {
 
   deletePostHandler = (postId) => {
     this.setState({ postsLoading: true });
-    fetch('http://localhost:8080/feed/post/' + postId, {
-      method: 'DELETE',
+    const graphqlQuery = {
+      query: `
+      mutation {
+        deletePost(id: "${postId}"){
+          id
+          title
+          content
+        }
+      }
+    `,
+    };
+    fetch('http://localhost:8080/graphql', {
+      method: 'POST',
       headers: {
         Authorization: 'Bearer ' + this.props.token,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify(graphqlQuery),
     })
       .then((res) => {
-        if (res.status !== 200 && res.status !== 201) {
-          throw new Error('Deleting a post failed!');
-        }
         return res.json();
       })
       .then((resData) => {
+        // if (resData.errors) {
+        //   throw new Error('Deleting the post failed!');
+        // }
         console.log(resData);
         this.loadPosts();
         // this.setState(prevState => {
@@ -303,7 +342,9 @@ class Feed extends Component {
                 <Post
                   key={post.id}
                   id={post.id}
-                  date={new Date(post.createdAt).toLocaleDateString('en-US')}
+                  date={new Date(parseInt(post.createdAt)).toLocaleDateString(
+                    'en-US'
+                  )}
                   title={post.title}
                   image={post.imageUrl}
                   content={post.content}
